@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use App\Models\CsvImportLog;
 use Filament\Forms;
 use Filament\Pages\Page;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Concerns\InteractsWithForms;
@@ -16,8 +17,8 @@ class CheckCsv extends Page implements HasForms
     protected static ?string $navigationIcon = 'heroicon-o-document-check';
     protected static string $view = 'filament.pages.check-csv';
 
+    public string|array|null $uploaded_file = null;
     public ?string $uploadedPath = null;
-
 
     public array $requiredHeaders = [
         'data', 'content', 'title', 'status', 'locale', 'taxonomy_terms', 'route_url', 'published_at', 'sites'
@@ -38,50 +39,50 @@ class CheckCsv extends Page implements HasForms
     {
         return $form->schema([
             Forms\Components\FileUpload::make('uploaded_file')
-                ->label('Upload CSV File')
-                ->acceptedFileTypes(['text/csv', 'text/plain'])
-                ->required()
-                ->disk('local')
-                ->directory('csv_uploads')
-                ->preserveFilenames()
-                ->openable()
-                ->downloadable()
-                ->maxFiles(1),
+            ->label('Upload CSV File')
+            ->acceptedFileTypes(['text/csv', 'text/plain'])
+            ->required()
+            ->disk('local')
+            ->directory('csv_uploads')
+            ->preserveFilenames()
+            ->openable()
+            ->downloadable()
+            ->multiple(false),
         ]);
     }
 
     public function submit(): void
-{
-    $this->errors = [];
-    $this->validRows = [];
-    $this->headerValid = false;
-    $this->cleaned = false;
+    {
+        $this->errors = [];
+        $this->validRows = [];
+        $this->headerValid = false;
+        $this->cleaned = false;
 
-    $state = $this->form->getState();
+        $state = $this->form->getState();
 
-    Log::info('🔍 Form state retrieved in submit()', ['state' => $state]);
+        Log::info('🔍 Form state retrieved in submit()', ['state' => $state]);
 
-    $uploadedFilePath = $state['uploaded_file'] ?? null;
+        $uploadedFilePath = $state['uploaded_file'] ?? null;
 
-    if (!$uploadedFilePath) {
-        $this->errors[] = '❌ No file uploaded.';
-        Log::warning('⚠️ No file uploaded during CSV validation.');
-        return;
+        if (!$uploadedFilePath) {
+            $this->errors[] = '❌ No file uploaded.';
+            Log::warning('⚠️ No file uploaded during CSV validation.');
+            return;
+        }
+
+        $this->uploadedPath = $uploadedFilePath;
+
+        Log::info('📁 Uploaded file path set', ['uploadedPath' => $this->uploadedPath]);
+
+        $this->validateCsv();
+
+        Log::info('✅ CSV validation triggered.', [
+            'user_id' => auth()->id(),
+            'uploadedPath' => $this->uploadedPath,
+            'errorsCount' => count($this->errors),
+            'validRowsCount' => count($this->validRows),
+        ]);
     }
-
-    $this->uploadedPath = $uploadedFilePath;
-
-    Log::info('📁 Uploaded file path set', ['uploadedPath' => $this->uploadedPath]);
-
-    $this->validateCsv();
-
-    Log::info('✅ CSV validation triggered.', [
-        'user_id' => auth()->id(),
-        'uploadedPath' => $this->uploadedPath,
-        'errorsCount' => count($this->errors),
-        'validRowsCount' => count($this->validRows),
-    ]);
-}
 
     public function cleanCsv(): void
     {
@@ -107,6 +108,7 @@ class CheckCsv extends Page implements HasForms
         foreach ($this->validRows as $row) {
             fputcsv($fp, $row);
         }
+
         fclose($fp);
         $this->cleaned = true;
     }
