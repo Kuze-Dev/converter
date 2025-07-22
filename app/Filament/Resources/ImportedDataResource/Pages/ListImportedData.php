@@ -7,7 +7,9 @@ use App\Models\ImportedData;
 use Filament\Actions;
 use Filament\Forms\Components\TextInput;
 use Filament\Resources\Pages\ListRecords;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use ZipArchive;
 
 class ListImportedData extends ListRecords
 {
@@ -16,8 +18,8 @@ class ListImportedData extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\Action::make('export_csv')
-                ->label('Export CSV in Batch')
+            Actions\Action::make('export_csv_batches')
+                ->label('Export All in Batches (ZIP)')
                 ->icon('heroicon-m-arrow-down-tray')
                 ->form([
                     TextInput::make('limit')
@@ -29,7 +31,7 @@ class ListImportedData extends ListRecords
                         ->required(),
                 ])
                 ->action(function (array $data) {
-                    return $this->exportCsv((int) $data['limit']);
+                    return $this->exportCsvInBatches((int) $data['limit']);
                 })
                 ->requiresConfirmation()
                 ->color('primary'),
@@ -37,42 +39,16 @@ class ListImportedData extends ListRecords
     }
 
     /**
-     * Export CSV in batches and loop when all rows are done.
+     * Export all records into CSV batch files, zip them, and stream the ZIP.
      */
-    protected function exportCsv(int $limit): StreamedResponse
+    protected function exportCsvInBatches(int $limit)
     {
-        $totalRecords = ImportedData::count();
+        $records = ImportedData::all();
+        $total = $records->count();
 
-        if ($totalRecords === 0) {
-            abort(404, 'No records available for export.');
+        if ($total === 0) {
+            abort(404, 'No records found for export.');
         }
-
-        // Get the current batch number from session or default to 0
-        $currentBatch = session('export_batch_number', 0);
-
-        // Calculate offset based on current batch and limit
-        $offset = $currentBatch * $limit;
-
-        // If we've reached the end, loop back to the beginning
-        if ($offset >= $totalRecords) {
-            $offset = 0;
-            $currentBatch = 0;
-        }
-
-        // Get records for the current batch
-        $records = ImportedData::offset($offset)
-            ->limit($limit)
-            ->get();
-
-        // Batch number for naming (1-based)
-        $batchDisplay = $currentBatch + 1;
-
-        $fileName = "imported_data_batch_{$batchDisplay}_" . now()->format('Ymd_His') . ".csv";
-
-        $headers = [
-            'Content-Type' => 'text/csv',
-            'Content-Disposition' => "attachment; filename=\"$fileName\"",
-        ];
 
         $columns = [
             'data',
@@ -86,11 +62,23 @@ class ListImportedData extends ListRecords
             'sites',
         ];
 
-        $callback = function () use ($records, $columns) {
-            $handle = fopen('php://output', 'w');
+        $batchFiles = [];
+        $chunks = $records->chunk($limit);
+        $tempDir = storage_path('app/export_batches_' . Str::uuid());
+
+        if (!file_exists($tempDir)) {
+            mkdir($tempDir, 0777, true);
+        }
+
+        foreach ($chunks as $index => $batch) {
+            $batchNumber = $index + 1;
+            $filename = "batch_{$batchNumber}.csv";
+            $path = "{$tempDir}/{$filename}";
+
+            $handle = fopen($path, 'w');
             fputcsv($handle, $columns);
 
-            foreach ($records as $record) {
+            foreach ($batch as $record) {
                 $row = [];
 
                 foreach ($columns as $column) {
@@ -107,12 +95,28 @@ class ListImportedData extends ListRecords
             }
 
             fclose($handle);
-        };
+            $batchFiles[] = $path;
+        }
 
-        // Store the next batch number in session
-        session(['export_batch_number' => $currentBatch + 1]);
+        $zipName = 'imported_data_batches_' . now()->format('Ymd_His') . '.zip';
+        $zipPath = storage_path("app/{$zipName}");
 
-        return response()->stream($callback, 200, $headers);
+        $zip = new ZipArchive;
+        if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true) {
+            foreach ($batchFiles as $filePath) {
+                $zip->addFile($filePath, basename($filePath));
+            }
+            $zip->close();
+        }
+
+        // Cleanup temp CSV files
+        foreach ($batchFiles as $file) {
+            unlink($file);
+        }
+        rmdir($tempDir);
+
+        // Return the zip file for download and delete it after
+        return response()->download($zipPath)->deleteFileAfterSend(true);
     }
 
     public function canCreate(): bool
