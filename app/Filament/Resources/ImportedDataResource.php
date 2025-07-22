@@ -223,7 +223,6 @@ class ImportedDataResource extends Resource
             
                                 $set('field_definitions', $result);
                                 
-                                // Also set a simple list of all field names for easy access
                                 $fieldNames = array_column($result, 'json_field');
                                 $set('available_fields', $fieldNames);
                                 
@@ -234,18 +233,27 @@ class ImportedDataResource extends Resource
                             }
                         }),
             
-                    Forms\Components\Repeater::make('field_definitions')
+                        Forms\Components\Repeater::make('field_definitions')
                         ->label('Field Mappings')
                         ->schema([
                             Forms\Components\TextInput::make('parent')
                                 ->disabled()
-                                ->label('Parent'),
+                                ->label('Parent')
+                                ->dehydrated(true), // Ensure it's included in form data
                             Forms\Components\TextInput::make('json_field')
                                 ->disabled()
-                                ->label('JSON Field'),
-                            Forms\Components\TextInput::make('path')
+                                ->label('JSON Field')
+                                ->dehydrated(true), // Ensure it's included in form data
+                            Forms\Components\Hidden::make('path') // Make it hidden instead of disabled
+                                ->dehydrated(true), // Ensure it's included in form data
+                            Forms\Components\TextInput::make('path_display')
                                 ->disabled()
-                                ->label('Full Path'),
+                                ->label('Full Path')
+                                ->dehydrated(false) // Don't include this in form data
+                                ->afterStateHydrated(function ($component, $state, $get) {
+                                    // Show the path value for display
+                                    $component->state($get('path'));
+                                }),
                             Forms\Components\Select::make('type')
                                 ->options([
                                     'string' => 'String',
@@ -256,17 +264,18 @@ class ImportedDataResource extends Resource
                                     'object' => 'Object',
                                     'NULL' => 'Null',
                                 ])
-                                ->label('Data Type'),
+                                ->label('Data Type')
+                                ->dehydrated(true),
                             Forms\Components\Select::make('csv_column')
                                 ->label('Map to CSV Column')
                                 ->options(function ($get, $state) {
-                                    // Get CSV headers from the parent form state
                                     $csvHeaders = data_get($get('../../csv_headers'), null, []);
                                     return array_combine($csvHeaders, $csvHeaders);
                                 })
                                 ->searchable()
                                 ->placeholder('Select CSV column')
-                                ->helperText('Choose which CSV column should populate this JSON field'),
+                                ->helperText('Choose which CSV column should populate this JSON field')
+                                ->dehydrated(true),
                         ])
                         ->live()
                         ->visible(function ($get) {
@@ -275,6 +284,19 @@ class ImportedDataResource extends Resource
                         ->columns(5)
                         ->itemLabel(function (array $state): ?string {
                             return $state['json_field'] ?? null;
+                        })
+                        ->dehydrated(true) // Ensure the entire repeater data is included
+                        ->mutateDehydratedStateUsing(function ($state) {
+                            // Ensure all required fields are present in the dehydrated state
+                            return collect($state)->map(function ($item) {
+                                return array_merge([
+                                    'parent' => '',
+                                    'json_field' => '',
+                                    'path' => '',
+                                    'type' => 'string',
+                                    'csv_column' => '',
+                                ], $item);
+                            })->toArray();
                         }),
             
                     // Optional: Display extracted field names as a simple list
@@ -283,7 +305,7 @@ class ImportedDataResource extends Resource
                         ->disabled()
                         ->live()
                         ->visible(function ($get) {
-                            return !empty($get('available_fields'));
+                            return !empty($get('    '));
                         }),
                 ])
                 ->action(function (array $data) {
@@ -402,8 +424,6 @@ class ImportedDataResource extends Resource
                                         $current[$finalKey] = $value;
                                     }
                                 }
-
-                                dd($importData);
                                 
                                 // Create ImportedData record
                                 ImportedData::create([
