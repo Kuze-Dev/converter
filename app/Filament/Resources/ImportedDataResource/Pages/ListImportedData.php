@@ -2,9 +2,10 @@
 
 namespace App\Filament\Resources\ImportedDataResource\Pages;
 
-use App\Filament\Resources\ImportedDataResource;
 use Filament\Actions;
+use Filament\Actions\ExportAction;
 use Filament\Resources\Pages\ListRecords;
+use App\Filament\Resources\ImportedDataResource;
 
 class ListImportedData extends ListRecords
 {
@@ -12,8 +13,18 @@ class ListImportedData extends ListRecords
 
     protected function getHeaderActions(): array
     {
-        return [
-            Actions\CreateAction::make(),
-        ];
+            return [
+                ExportAction::make()
+                    ->label('Export CSV')
+                    ->icon('heroicon-m-arrow-down-tray'),
+
+
+            ];
+    }
+
+
+    public function canCreate(): bool
+    {
+        return false;
     }
 }
