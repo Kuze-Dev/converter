@@ -11,10 +11,12 @@ use Filament\Resources\Resource;
 use Filament\Tables\Actions\Action;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use App\Filament\Resources\ImportedDataResource\Pages;
 use App\Filament\Resources\ImportedDataResource\RelationManagers;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 class ImportedDataResource extends Resource
 {
@@ -95,10 +97,12 @@ class ImportedDataResource extends Resource
                             }
 
                             try {
-                                // Handle both temporary uploads and stored files
                                 $filePath = null;
                                 
-                                if (is_string($state)) {
+                                // Handle TemporaryUploadedFile objects from Livewire
+                                if ($state instanceof TemporaryUploadedFile) {
+                                    $filePath = $state->getRealPath();
+                                } elseif (is_string($state)) {
                                     // Try different possible paths for Filament uploads
                                     $possiblePaths = [
                                         storage_path('app/livewire-tmp/' . $state),
@@ -114,10 +118,18 @@ class ImportedDataResource extends Resource
                                             break;
                                         }
                                     }
+                                } elseif (is_array($state) && !empty($state)) {
+                                    // Sometimes Filament returns an array
+                                    $firstFile = $state[0];
+                                    if ($firstFile instanceof TemporaryUploadedFile) {
+                                        $filePath = $firstFile->getRealPath();
+                                    } elseif (is_string($firstFile)) {
+                                        $filePath = storage_path('app/livewire-tmp/' . $firstFile);
+                                    }
                                 }
                                 
                                 if (!$filePath || !file_exists($filePath)) {
-                                    Log::warning('CSV file not found in any expected location. State: ' . json_encode($state));
+                                    Log::warning('CSV file not found. State type: ' . gettype($state) . ', Value: ' . json_encode($state));
                                     return;
                                 }
 
@@ -139,6 +151,7 @@ class ImportedDataResource extends Resource
                                 }
                             } catch (\Throwable $e) {
                                 Log::error('Error reading CSV headers: ' . $e->getMessage());
+                                Log::error('Stack trace: ' . $e->getTraceAsString());
                                 $set('csv_headers', []);
                             }
                         }),
@@ -274,24 +287,20 @@ class ImportedDataResource extends Resource
                         }),
                 ])
                 ->action(function (array $data) {
-                    // Handle the import action here
-                    // You'll have access to:
-                    // - $data['uploaded_file'] - the CSV file
-                    // - $data['json_input'] - the JSON structure
-                    // - $data['field_definitions'] - the field mappings with CSV columns
+                    Log::info('Import data received:', [
+                        'uploaded_file_type' => gettype($data['uploaded_file']),
+                        'uploaded_file_value' => is_object($data['uploaded_file']) ? get_class($data['uploaded_file']) : $data['uploaded_file'],
+                        'field_definitions_count' => count($data['field_definitions'] ?? [])
+                    ]);
                     
-                    Log::info('Import data received:', $data);
-                    
-                    // Process the CSV file and create ImportedData records
-                    // based on the field mappings
-                    
-                    // Example implementation:
                     try {
                         // Find the correct file path
                         $filePath = null;
                         $uploadedFile = $data['uploaded_file'];
                         
-                        if (is_string($uploadedFile)) {
+                        if ($uploadedFile instanceof TemporaryUploadedFile) {
+                            $filePath = $uploadedFile->getRealPath();
+                        } elseif (is_string($uploadedFile)) {
                             $possiblePaths = [
                                 storage_path('app/livewire-tmp/' . $uploadedFile),
                                 storage_path('app/public/' . $uploadedFile),
@@ -306,80 +315,145 @@ class ImportedDataResource extends Resource
                                     break;
                                 }
                             }
+                        } elseif (is_array($uploadedFile) && !empty($uploadedFile)) {
+                            $firstFile = $uploadedFile[0];
+                            if ($firstFile instanceof TemporaryUploadedFile) {
+                                $filePath = $firstFile->getRealPath();
+                            } elseif (is_string($firstFile)) {
+                                $filePath = storage_path('app/livewire-tmp/' . $firstFile);
+                            }
                         }
                         
                         if (!$filePath || !file_exists($filePath)) {
-                            throw new \Exception('CSV file not found for import');
+                            throw new \Exception('CSV file not found for import. File type: ' . gettype($uploadedFile));
                         }
                         
-                        $mappings = collect($data['field_definitions']);
+                        $mappings = collect($data['field_definitions'] ?? []);
+                        
+                        if ($mappings->isEmpty()) {
+                            throw new \Exception('No field mappings defined. Please map CSV columns to JSON fields.');
+                        }
                         
                         // Read CSV data
                         $handle = fopen($filePath, 'r');
-                        $headers = fgetcsv($handle); // Get header row
+                        if (!$handle) {
+                            throw new \Exception('Could not open CSV file for reading.');
+                        }
+                        
+                        $headers = fgetcsv($handle);
+                        if (!$headers) {
+                            fclose($handle);
+                            throw new \Exception('Could not read CSV headers.');
+                        }
+                        
+                        // Clean headers
+                        $headers = array_map(function($header) {
+                            return trim(str_replace(["\xEF\xBB\xBF", "\uFEFF"], '', $header));
+                        }, $headers);
                         
                         $importCount = 0;
+                        $errors = [];
+                        
                         while (($row = fgetcsv($handle)) !== false) {
-                            $csvData = array_combine($headers, $row);
-                            
-                            // Build the data array based on mappings
-                            $importData = [];
-                            foreach ($mappings as $mapping) {
-                                if (!empty($mapping['csv_column']) && isset($csvData[$mapping['csv_column']])) {
-                                    // Handle nested JSON paths
-                                    $path = explode('.', $mapping['path']);
-                                    $current = &$importData;
-                                    
-                                    // Navigate to the correct nested location
-                                    for ($i = 0; $i < count($path) - 1; $i++) {
-                                        if (!isset($current[$path[$i]])) {
-                                            $current[$path[$i]] = [];
-                                        }
-                                        $current = &$current[$path[$i]];
-                                    }
-                                    
-                                    // Set the value at the final location
-                                    $finalKey = end($path);
-                                    $current[$finalKey] = $csvData[$mapping['csv_column']];
+                            try {
+                                if (count($row) !== count($headers)) {
+                                    $errors[] = "Row " . ($importCount + 2) . ": Column count mismatch";
+                                    continue;
                                 }
+                                
+                                $csvData = array_combine($headers, $row);
+                                
+                                // Build the data array based on mappings
+                                $importData = [];
+                                foreach ($mappings as $mapping) {
+                                    if (!empty($mapping['csv_column']) && isset($csvData[$mapping['csv_column']])) {
+                                        // Handle nested JSON paths
+                                        $path = explode('.', $mapping['path']);
+                                        $current = &$importData;
+                                        
+                                        // Navigate to the correct nested location
+                                        for ($i = 0; $i < count($path) - 1; $i++) {
+                                            if (!isset($current[$path[$i]])) {
+                                                $current[$path[$i]] = [];
+                                            }
+                                            $current = &$current[$path[$i]];
+                                        }
+                                        
+                                        // Set the value at the final location
+                                        $finalKey = end($path);
+                                        $value = $csvData[$mapping['csv_column']];
+                                        
+                                        // Type casting based on mapping type
+                                        switch ($mapping['type']) {
+                                            case 'integer':
+                                                $value = (int) $value;
+                                                break;
+                                            case 'double':
+                                                $value = (float) $value;
+                                                break;
+                                            case 'boolean':
+                                                $value = in_array(strtolower($value), ['true', '1', 'yes', 'on']);
+                                                break;
+                                            case 'array':
+                                                $value = json_decode($value, true) ?? explode(',', $value);
+                                                break;
+                                        }
+                                        
+                                        $current[$finalKey] = $value;
+                                    }
+                                }
+
+                                dd($importData);
+                                
+                                // Create ImportedData record
+                                ImportedData::create([
+                                    'data' => json_encode($importData),
+                                    // Map other fields - make these configurable if needed
+                                    'content' => $csvData['content'] ?? null,
+                                    'title' => $csvData['title'] ?? null,
+                                    'route_url' => $csvData['route_url'] ?? null,
+                                    'status' => isset($csvData['status']) ? 
+                                        in_array(strtolower($csvData['status']), ['true', '1', 'yes', 'on', 'active']) : true,
+                                    'sites' => $csvData['sites'] ?? null,
+                                    'locale' => $csvData['locale'] ?? 'en',
+                                    'taxonomy_terms' => $csvData['taxonomy_terms'] ?? null,
+                                    'published_at' => isset($csvData['published_at']) ? 
+                                        \Carbon\Carbon::parse($csvData['published_at']) : now(),
+                                ]);
+                                
+                                $importCount++;
+                            } catch (\Exception $e) {
+                                $errors[] = "Row " . ($importCount + 2) . ": " . $e->getMessage();
                             }
-                            
-                            // Create ImportedData record
-                            ImportedData::create([
-                                'data' => json_encode($importData),
-                                // Map other fields as needed - you may want to make these configurable too
-                                'content' => $csvData['content'] ?? null,
-                                'title' => $csvData['title'] ?? null,
-                                'route_url' => $csvData['route_url'] ?? null,
-                                'status' => isset($csvData['status']) ? (bool)$csvData['status'] : true,
-                                'sites' => $csvData['sites'] ?? null,
-                                'locale' => $csvData['locale'] ?? 'en',
-                                'taxonomy_terms' => $csvData['taxonomy_terms'] ?? null,
-                                'published_at' => isset($csvData['published_at']) ? 
-                                    \Carbon\Carbon::parse($csvData['published_at']) : now(),
-                            ]);
-                            
-                            $importCount++;
                         }
                         
                         fclose($handle);
                         
-                        // Clean up uploaded file if it's in temporary storage
-                        if (strpos($filePath, 'livewire-tmp') !== false) {
-                            @unlink($filePath);
+                        // Show results
+                        if ($importCount > 0) {
+                            $message = "Successfully imported {$importCount} records.";
+                            if (!empty($errors)) {
+                                $message .= " " . count($errors) . " rows had errors.";
+                            }
+                            
+                            Notification::make()
+                                ->title('Import Completed')
+                                ->body($message)
+                                ->success()
+                                ->send();
+                                
+                            if (!empty($errors)) {
+                                Log::warning('Import errors:', $errors);
+                            }
+                        } else {
+                            throw new \Exception('No records were imported. Errors: ' . implode(', ', $errors));
                         }
-                        
-                        // Show success notification
-                        \Filament\Notifications\Notification::make()
-                            ->title('Import Successful')
-                            ->body("Successfully imported {$importCount} records.")
-                            ->success()
-                            ->send();
                             
                     } catch (\Throwable $e) {
                         Log::error('Import failed: ' . $e->getMessage());
+                        Log::error('Stack trace: ' . $e->getTraceAsString());
                         
-                        \Filament\Notifications\Notification::make()
+                        Notification::make()
                             ->title('Import Failed')
                             ->body($e->getMessage())
                             ->danger()
