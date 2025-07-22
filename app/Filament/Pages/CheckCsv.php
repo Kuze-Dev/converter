@@ -13,6 +13,7 @@ use Filament\Forms\Concerns\InteractsWithForms;
 class CheckCsv extends Page implements HasForms
 {
     use InteractsWithForms;
+    protected static ?string $navigationLabel = 'Imported Data Checker';
 
     protected static ?string $navigationIcon = 'heroicon-o-document-check';
     protected static string $view = 'filament.pages.check-csv';
