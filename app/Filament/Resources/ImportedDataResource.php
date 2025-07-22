@@ -24,6 +24,8 @@ class ImportedDataResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-document-arrow-down';
 
+    protected static ?string $navigationGroup = 'Data Management';
+
     protected static ?string $navigationLabel = 'Data import converter';
 
     public static function form(Form $form): Form
@@ -80,10 +82,11 @@ class ImportedDataResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
-            ])
+
+                ])
             ->headerActions([
                 Action::make('import_data')
+                ->slideOver()
                 ->form([
                     Forms\Components\FileUpload::make('uploaded_file')
                         ->label('Upload CSV File')
@@ -99,17 +102,16 @@ class ImportedDataResource extends Resource
                             try {
                                 $filePath = null;
                                 
-                                // Handle TemporaryUploadedFile objects from Livewire
                                 if ($state instanceof TemporaryUploadedFile) {
                                     $filePath = $state->getRealPath();
                                 } elseif (is_string($state)) {
-                                    // Try different possible paths for Filament uploads
+
                                     $possiblePaths = [
                                         storage_path('app/livewire-tmp/' . $state),
                                         storage_path('app/public/' . $state),
                                         storage_path('app/' . $state),
                                         Storage::disk('public')->path($state),
-                                        $state // In case it's already a full path
+                                        $state 
                                     ];
                                     
                                     foreach ($possiblePaths as $path) {
@@ -119,7 +121,7 @@ class ImportedDataResource extends Resource
                                         }
                                     }
                                 } elseif (is_array($state) && !empty($state)) {
-                                    // Sometimes Filament returns an array
+
                                     $firstFile = $state[0];
                                     if ($firstFile instanceof TemporaryUploadedFile) {
                                         $filePath = $firstFile->getRealPath();
@@ -140,7 +142,6 @@ class ImportedDataResource extends Resource
                                     fclose($handle);
                                     
                                     if ($headers) {
-                                        // Clean up headers (remove BOM, trim whitespace)
                                         $cleanHeaders = array_map(function($header) {
                                             return trim(str_replace(["\xEF\xBB\xBF", "\uFEFF"], '', $header));
                                         }, $headers);
@@ -156,14 +157,22 @@ class ImportedDataResource extends Resource
                             }
                         }),
 
-                    // Display CSV headers for reference
                     Forms\Components\TagsInput::make('csv_headers')
                         ->label('CSV Headers (Detected)')
                         ->disabled()
                         ->visible(function ($get) {
                             return !empty($get('csv_headers'));
                         }),
-            
+                    Forms\Components\TextInput::make('content')
+                        ->required(),
+                        
+                    Forms\Components\Select::make('locale')
+                        ->options([
+                            'en' => 'English',
+                            'fr' => 'French',
+                            'zh' => 'Chinese',
+                            'es' => 'Spanish',
+                        ]),   
                     Forms\Components\Textarea::make('json_input')
                         ->label('Enter JSON Format')
                         ->required()
@@ -189,26 +198,22 @@ class ImportedDataResource extends Resource
 
                                 $csvHeaders = $get('csv_headers') ?? [];
             
-                                // Extract all field names recursively
                                 $extractFields = function ($data, $parentPath = '') use (&$extractFields, $csvHeaders) {
                                     $fields = [];
                                     
                                     foreach ($data as $key => $value) {
                                         $currentPath = $parentPath ? $parentPath . '.' . $key : $key;
                                         
-                                        // Add the current field with CSV header options
                                         $fields[] = [
                                             'parent' => $parentPath ?: 'root',
                                             'json_field' => $key,
                                             'path' => $currentPath,
                                             'type' => is_array($value) ? 'array' : gettype($value),
-                                            'csv_column' => '', // This will be populated by user selection
+                                            'csv_column' => '', 
                                             'available_csv_headers' => $csvHeaders,
                                         ];
                                         
-                                        // If it's an array/object, recursively extract its fields
                                         if (is_array($value) && !empty($value)) {
-                                            // Check if it's an associative array (object-like)
                                             if (array_keys($value) !== range(0, count($value) - 1)) {
                                                 $nestedFields = $extractFields($value, $currentPath);
                                                 $fields = array_merge($fields, $nestedFields);
@@ -239,21 +244,13 @@ class ImportedDataResource extends Resource
                             Forms\Components\TextInput::make('parent')
                                 ->disabled()
                                 ->label('Parent')
-                                ->dehydrated(true), // Ensure it's included in form data
+                                ->dehydrated(true),
                             Forms\Components\TextInput::make('json_field')
                                 ->disabled()
                                 ->label('JSON Field')
-                                ->dehydrated(true), // Ensure it's included in form data
-                            Forms\Components\Hidden::make('path') // Make it hidden instead of disabled
-                                ->dehydrated(true), // Ensure it's included in form data
-                            Forms\Components\TextInput::make('path_display')
-                                ->disabled()
-                                ->label('Full Path')
-                                ->dehydrated(false) // Don't include this in form data
-                                ->afterStateHydrated(function ($component, $state, $get) {
-                                    // Show the path value for display
-                                    $component->state($get('path'));
-                                }),
+                                ->dehydrated(true),
+                            Forms\Components\Hidden::make('path')
+                                ->dehydrated(true),
                             Forms\Components\Select::make('type')
                                 ->options([
                                     'string' => 'String',
@@ -285,9 +282,8 @@ class ImportedDataResource extends Resource
                         ->itemLabel(function (array $state): ?string {
                             return $state['json_field'] ?? null;
                         })
-                        ->dehydrated(true) // Ensure the entire repeater data is included
+                        ->dehydrated(true) 
                         ->mutateDehydratedStateUsing(function ($state) {
-                            // Ensure all required fields are present in the dehydrated state
                             return collect($state)->map(function ($item) {
                                 return array_merge([
                                     'parent' => '',
@@ -299,7 +295,6 @@ class ImportedDataResource extends Resource
                             })->toArray();
                         }),
             
-                    // Optional: Display extracted field names as a simple list
                     Forms\Components\TagsInput::make('available_fields')
                         ->label('Available JSON Fields')
                         ->disabled()
@@ -316,7 +311,6 @@ class ImportedDataResource extends Resource
                     ]);
                     
                     try {
-                        // Find the correct file path
                         $filePath = null;
                         $uploadedFile = $data['uploaded_file'];
                         
@@ -356,7 +350,6 @@ class ImportedDataResource extends Resource
                             throw new \Exception('No field mappings defined. Please map CSV columns to JSON fields.');
                         }
                         
-                        // Read CSV data
                         $handle = fopen($filePath, 'r');
                         if (!$handle) {
                             throw new \Exception('Could not open CSV file for reading.');
@@ -368,7 +361,6 @@ class ImportedDataResource extends Resource
                             throw new \Exception('Could not read CSV headers.');
                         }
                         
-                        // Clean headers
                         $headers = array_map(function($header) {
                             return trim(str_replace(["\xEF\xBB\xBF", "\uFEFF"], '', $header));
                         }, $headers);
@@ -385,15 +377,12 @@ class ImportedDataResource extends Resource
                                 
                                 $csvData = array_combine($headers, $row);
                                 
-                                // Build the data array based on mappings
                                 $importData = [];
                                 foreach ($mappings as $mapping) {
                                     if (!empty($mapping['csv_column']) && isset($csvData[$mapping['csv_column']])) {
-                                        // Handle nested JSON paths
                                         $path = explode('.', $mapping['path']);
                                         $current = &$importData;
                                         
-                                        // Navigate to the correct nested location
                                         for ($i = 0; $i < count($path) - 1; $i++) {
                                             if (!isset($current[$path[$i]])) {
                                                 $current[$path[$i]] = [];
@@ -401,11 +390,9 @@ class ImportedDataResource extends Resource
                                             $current = &$current[$path[$i]];
                                         }
                                         
-                                        // Set the value at the final location
                                         $finalKey = end($path);
                                         $value = $csvData[$mapping['csv_column']];
                                         
-                                        // Type casting based on mapping type
                                         switch ($mapping['type']) {
                                             case 'integer':
                                                 $value = (int) $value;
@@ -425,17 +412,15 @@ class ImportedDataResource extends Resource
                                     }
                                 }
                                 
-                                // Create ImportedData record
                                 ImportedData::create([
                                     'data' => json_encode($importData),
-                                    // Map other fields - make these configurable if needed
-                                    'content' => $csvData['content'] ?? null,
+                                    'content' => $data['content'] ?? null,
                                     'title' => $csvData['title'] ?? null,
                                     'route_url' => $csvData['route_url'] ?? null,
                                     'status' => isset($csvData['status']) ? 
                                         in_array(strtolower($csvData['status']), ['true', '1', 'yes', 'on', 'active']) : true,
                                     'sites' => $csvData['sites'] ?? null,
-                                    'locale' => $csvData['locale'] ?? 'en',
+                                    'locale' => $data['locale'] ?? 'en',
                                     'taxonomy_terms' => $csvData['taxonomy_terms'] ?? null,
                                     'published_at' => isset($csvData['published_at']) ? 
                                         \Carbon\Carbon::parse($csvData['published_at']) : now(),
@@ -449,7 +434,6 @@ class ImportedDataResource extends Resource
                         
                         fclose($handle);
                         
-                        // Show results
                         if ($importCount > 0) {
                             $message = "Successfully imported {$importCount} records.";
                             if (!empty($errors)) {
