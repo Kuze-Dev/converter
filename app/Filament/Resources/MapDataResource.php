@@ -13,6 +13,8 @@ use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\TextInput;
+use App\Filament\Imports\MapDataImporter;
+use Filament\Tables\Actions\ImportAction;
 use Illuminate\Database\Eloquent\Builder;
 use Filament\Forms\Components\Placeholder;
 use App\Filament\Resources\MapDataResource\Pages;
@@ -43,12 +45,11 @@ class MapDataResource extends Resource
                             $set('mapped_data', Str::slug($state));
                         }
                     })
-                    ->live(onBlur: true), // Only trigger after field loses focus
+                    ->live(onBlur: true), 
                 Toggle::make('auto_slug')
                     ->label('Auto-Slug')
-                    ->live() // Needed so that when toggled ON, it reacts
+                    ->live() 
                     ->afterStateUpdated(function ($state, callable $get, callable $set) {
-                        // If toggle is turned on AFTER original_data is filled
                         if ($state && $get('original_data')) {
                             $set('mapped_data', Str::slug($get('original_data')));
                         }
@@ -67,7 +68,7 @@ class MapDataResource extends Resource
                     ->content(fn ($get) => $get('original_data') || $get('mapped_data')
                         ? "{$get('original_data')} => {$get('mapped_data')}"
                         : '—'),
-            ])
+                ])
             ]);
     }
 
@@ -90,6 +91,10 @@ class MapDataResource extends Resource
             ])
             ->filters([
                 //
+            ])
+            ->headerActions([
+                ImportAction::make()
+                ->importer(MapDataImporter::class)
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
