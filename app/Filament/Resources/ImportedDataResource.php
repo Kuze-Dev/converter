@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use Filament\Forms;
 use Filament\Tables;
+use App\Models\MapData;
 use Filament\Forms\Form;
 use Filament\Tables\Table;
 use App\Models\ImportedData;
@@ -15,8 +16,8 @@ use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use App\Filament\Resources\ImportedDataResource\Pages;
-use App\Filament\Resources\ImportedDataResource\RelationManagers;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
+use App\Filament\Resources\ImportedDataResource\RelationManagers;
 
 class ImportedDataResource extends Resource
 {
@@ -26,7 +27,7 @@ class ImportedDataResource extends Resource
 
     protected static ?string $navigationGroup = 'Data Management';
 
-    protected static ?string $navigationLabel = 'Data import converter';
+    protected static ?string $navigationLabel = 'Content Entries Converter';
 
     public static function form(Form $form): Form
     {
@@ -135,7 +136,6 @@ class ImportedDataResource extends Resource
                                     return;
                                 }
 
-                                // Read CSV headers
                                 $handle = fopen($filePath, 'r');
                                 if ($handle) {
                                     $headers = fgetcsv($handle);
@@ -172,7 +172,8 @@ class ImportedDataResource extends Resource
                             'fr' => 'French',
                             'zh' => 'Chinese',
                             'es' => 'Spanish',
-                        ]),   
+                        ]),
+
                     Forms\Components\Textarea::make('json_input')
                         ->label('Enter JSON Format')
                         ->required()
@@ -345,7 +346,7 @@ class ImportedDataResource extends Resource
                         }
                         
                         $mappings = collect($data['field_definitions'] ?? []);
-                        
+                            
                         if ($mappings->isEmpty()) {
                             throw new \Exception('No field mappings defined. Please map CSV columns to JSON fields.');
                         }
@@ -368,31 +369,45 @@ class ImportedDataResource extends Resource
                         $importCount = 0;
                         $errors = [];
                         
+                        $mapdata = MapData::get()->pluck('mapped_data', 'original_data')->toArray();
+
+                        function applyMappingRecursive($data, $mapdata)
+                        {
+                            foreach ($data as $key => $value) {
+                                if (is_array($value)) {
+                                    $data[$key] = applyMappingRecursive($value, $mapdata);
+                                } else {
+                                    $data[$key] = $mapdata[$value] ?? $value;
+                                }
+                            }
+                            return $data;
+                        }
+                        
                         while (($row = fgetcsv($handle)) !== false) {
                             try {
                                 if (count($row) !== count($headers)) {
                                     $errors[] = "Row " . ($importCount + 2) . ": Column count mismatch";
                                     continue;
                                 }
-                                
+                        
                                 $csvData = array_combine($headers, $row);
-                                
+                        
                                 $importData = [];
                                 foreach ($mappings as $mapping) {
                                     if (!empty($mapping['csv_column']) && isset($csvData[$mapping['csv_column']])) {
                                         $path = explode('.', $mapping['path']);
                                         $current = &$importData;
-                                        
+                        
                                         for ($i = 0; $i < count($path) - 1; $i++) {
                                             if (!isset($current[$path[$i]])) {
                                                 $current[$path[$i]] = [];
                                             }
                                             $current = &$current[$path[$i]];
                                         }
-                                        
+                        
                                         $finalKey = end($path);
                                         $value = $csvData[$mapping['csv_column']];
-                                        
+                        
                                         switch ($mapping['type']) {
                                             case 'integer':
                                                 $value = (int) $value;
@@ -407,25 +422,29 @@ class ImportedDataResource extends Resource
                                                 $value = json_decode($value, true) ?? explode(',', $value);
                                                 break;
                                         }
-                                        
+                        
                                         $current[$finalKey] = $value;
                                     }
                                 }
-                                
+                        
+                                $importData = applyMappingRecursive($importData, $mapdata);
+                        
                                 ImportedData::create([
                                     'data' => json_encode($importData),
                                     'content' => $data['content'] ?? null,
                                     'title' => $csvData['title'] ?? null,
                                     'route_url' => $csvData['route_url'] ?? null,
-                                    'status' => isset($csvData['status']) ? 
-                                        in_array(strtolower($csvData['status']), ['true', '1', 'yes', 'on', 'active']) : true,
+                                    'status' => isset($csvData['status'])
+                                        ? in_array(strtolower($csvData['status']), ['true', '1', 'yes', 'on', 'active'])
+                                        : true,
                                     'sites' => $csvData['sites'] ?? null,
                                     'locale' => $data['locale'] ?? 'en',
                                     'taxonomy_terms' => $csvData['taxonomy_terms'] ?? null,
-                                    'published_at' => isset($csvData['published_at']) ? 
-                                        \Carbon\Carbon::parse($csvData['published_at']) : now(),
+                                    'published_at' => isset($csvData['published_at'])
+                                        ? \Carbon\Carbon::parse($csvData['published_at'])
+                                        : now(),
                                 ]);
-                                
+                        
                                 $importCount++;
                             } catch (\Exception $e) {
                                 $errors[] = "Row " . ($importCount + 2) . ": " . $e->getMessage();
