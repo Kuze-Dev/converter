@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use Filament\Forms;
 use Filament\Tables;
 use App\Models\MapData;
+use App\Models\Taxonomy;
 use Filament\Forms\Form;
 use Filament\Tables\Table;
 use App\Models\ImportedData;
@@ -369,19 +370,73 @@ class ImportedDataResource extends Resource
                         $importCount = 0;
                         $errors = [];
                         
-                        $mapdata = MapData::get()->pluck('mapped_data', 'original_data')->toArray();
+                        $mapdata = MapData::get()
+                        ->pluck('mapped_data', 'original_data')
+                        ->mapWithKeys(fn($value, $key) => [mb_strtolower(trim($key)) => $value])
+                        ->toArray();
 
-                        function applyMappingRecursive($data, $mapdata)
+                        $taxonomyMap = Taxonomy::get()
+                        ->pluck('converted_value', 'original_value')
+                        ->mapWithKeys(fn($value, $key) => [mb_strtolower(trim($key)) => $value])
+                        ->toArray();
+                        function extractTaxonomyTerms($data, $taxonomyMap)
                         {
-                            foreach ($data as $key => $value) {
-                                if (is_array($value)) {
-                                    $data[$key] = applyMappingRecursive($value, $mapdata);
-                                } else {
-                                    $data[$key] = $mapdata[$value] ?? $value;
+                            $matched = [];
+                        
+                            $flatten = function ($data) use (&$flatten) {
+                                $result = [];
+                        
+                                foreach ($data as $key => $value) {
+                                    if (is_array($value)) {
+                                        $result = array_merge($result, $flatten($value));
+                                    } else {
+                                        $result[] = $value;
+                                    }
+                                }
+                        
+                                return $result;
+                            };
+                        
+                            $flatValues = $flatten($data);
+                        
+                            foreach ($flatValues as $value) {
+                                if (is_string($value)) {
+                                    $terms = preg_split('/\s*,\s*/', $value); // split comma-separated values
+                                    foreach ($terms as $term) {
+                                        $key = mb_strtolower(trim($term));
+                                        if (isset($taxonomyMap[$key])) {
+                                            $matched[] = $taxonomyMap[$key];
+                                        }
+                                    }
                                 }
                             }
-                            return $data;
+                        
+                            return array_unique($matched);
                         }
+                        
+                    function applyMappingRecursive($data, $mapdata)
+                    {
+                        foreach ($data as $key => $value) {
+                            if (is_array($value)) {
+                                $data[$key] = applyMappingRecursive($value, $mapdata);
+                            } elseif (is_string($value)) {
+                                if (str_contains($value, ',')) {
+                                    $keywords = preg_split('/\s*,\s*/', $value);
+                                    $mapped = array_map(function ($keyword) use ($mapdata) {
+                                        $lowerKeyword = mb_strtolower(trim($keyword));
+                                        return $mapdata[$lowerKeyword] ?? $keyword;
+                                    }, $keywords);
+                                    $data[$key] = implode(', ', $mapped);
+                                } else {
+                                    $lowerValue = mb_strtolower(trim($value));
+                                    $data[$key] = $mapdata[$lowerValue] ?? $value;
+                                }
+                            }
+                        }
+                    
+                        return $data;
+                    }
+                        
                         
                         while (($row = fgetcsv($handle)) !== false) {
                             try {
@@ -427,8 +482,11 @@ class ImportedDataResource extends Resource
                                     }
                                 }
                         
+                                $taxonomyTerms = extractTaxonomyTerms($importData, $taxonomyMap);
                                 $importData = applyMappingRecursive($importData, $mapdata);
-                        
+
+                                dd($taxonomyTerms);
+                                                       
                                 ImportedData::create([
                                     'data' => json_encode($importData),
                                     'content' => $data['content'] ?? null,
@@ -439,7 +497,7 @@ class ImportedDataResource extends Resource
                                         : true,
                                     'sites' => $csvData['sites'] ?? null,
                                     'locale' => $data['locale'] ?? 'en',
-                                    'taxonomy_terms' => $csvData['taxonomy_terms'] ?? null,
+                                    'taxonomy_terms' => implode(', ', $taxonomyTerms) ?? null,
                                     'published_at' => isset($csvData['published_at'])
                                         ? \Carbon\Carbon::parse($csvData['published_at'])
                                         : now(),
