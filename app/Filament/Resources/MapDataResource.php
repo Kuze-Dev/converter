@@ -27,7 +27,7 @@ class MapDataResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-map';
 
-    protected static ?string $navigationGroup = 'Data Management';
+    protected static ?string $navigationGroup = 'Data Mapping';
 
 
     public static function form(Form $form): Form
@@ -79,6 +79,7 @@ class MapDataResource extends Resource
                 Tables\Columns\TextColumn::make('original_data')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('mapped_data')
+                    ->label('Value')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
