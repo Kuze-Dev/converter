@@ -45,16 +45,16 @@ class MapDataResource extends Resource
                             $set('mapped_data', Str::slug($state));
                         }
                     })
-                    ->live(onBlur: true), 
+                    ->live(onBlur: true),
                 Toggle::make('auto_slug')
                     ->label('Auto-Slug')
-                    ->live() 
+                    ->live()
                     ->afterStateUpdated(function ($state, callable $get, callable $set) {
                         if ($state && $get('original_data')) {
                             $set('mapped_data', Str::slug($get('original_data')));
                         }
                     }),
-                    
+
                 TextInput::make('mapped_data')
                     ->label('Mapped Data')
                     ->maxLength(255)
@@ -75,6 +75,7 @@ class MapDataResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->poll('5s')
             ->columns([
                 Tables\Columns\TextColumn::make('original_data')
                     ->searchable(),
