@@ -10,9 +10,11 @@ use Filament\Tables\Table;
 use Filament\Resources\Resource;
 use Filament\Tables\Actions\ImportAction;
 use Illuminate\Database\Eloquent\Builder;
+use App\Filament\Imports\TaxonomyImporter;
 use App\Filament\Resources\TaxonomyResource\Pages;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use App\Filament\Resources\TaxonomyResource\RelationManagers;
+use Filament\Tables\Columns\TextColumn;
 
 class TaxonomyResource extends Resource
 {
@@ -36,13 +38,16 @@ class TaxonomyResource extends Resource
     {
         return $table
             ->columns([
-                //
+                TextColumn::make('original_data')
+                ->searchable(),
+                TextColumn::make('converted_value')
             ])
             ->filters([
                 //
             ])
             ->headerActions([
                 ImportAction::make('import data')
+                ->importer(TaxonomyImporter::class)
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
