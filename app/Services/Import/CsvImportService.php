@@ -29,7 +29,7 @@ class CsvImportService
         ImportedDataRepository $repository
     ) {
         $this->fileResolver = $fileResolver;
-        $this->csvProcessor = $csvProcessor;
+        $this->$this->csvProcessor = $csvProcessor;
         $this->dataMapper = $dataMapper;
         $this->taxonomyExtractor = $taxonomyExtractor;
         $this->repository = $repository;
@@ -38,10 +38,8 @@ class CsvImportService
     public function import(array $data): ImportResult
     {
         try {
-            // Resolve file path
             $filePath = $this->fileResolver->resolve($data['uploaded_file']);
             
-            // Validate mappings
             $mappings = collect($data['field_definitions'] ?? []);
             if ($mappings->isEmpty()) {
                 throw new ImportException('No field mappings defined. Please map CSV columns to JSON fields.');

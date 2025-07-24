@@ -13,7 +13,9 @@ use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\TextInput;
+use App\Filament\Exports\MapDataExporter;
 use App\Filament\Imports\MapDataImporter;
+use Filament\Tables\Actions\ExportAction;
 use Filament\Tables\Actions\ImportAction;
 use Illuminate\Database\Eloquent\Builder;
 use Filament\Forms\Components\Placeholder;
@@ -95,7 +97,9 @@ class MapDataResource extends Resource
             ])
             ->headerActions([
                 ImportAction::make()
-                ->importer(MapDataImporter::class)
+                ->importer(MapDataImporter::class),
+                ExportAction::make()
+                ->exporter(MapDataExporter::class),
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
