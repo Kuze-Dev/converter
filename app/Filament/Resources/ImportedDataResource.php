@@ -374,46 +374,45 @@ class ImportedDataResource extends Resource
                         ->pluck('mapped_data', 'original_data')
                         ->mapWithKeys(fn($value, $key) => [mb_strtolower(trim($key)) => $value])
                         ->toArray();
-
-                        $taxonomyMap = Taxonomy::get()
-                        ->pluck('converted_value', 'original_value')
+                    
+                    $taxonomyMap = Taxonomy::get()
+                        ->pluck('converted_value', 'original_data')
                         ->mapWithKeys(fn($value, $key) => [mb_strtolower(trim($key)) => $value])
                         ->toArray();
-                        function extractTaxonomyTerms($data, $taxonomyMap)
-                        {
-                            $matched = [];
-                        
-                            $flatten = function ($data) use (&$flatten) {
-                                $result = [];
-                        
-                                foreach ($data as $key => $value) {
-                                    if (is_array($value)) {
-                                        $result = array_merge($result, $flatten($value));
-                                    } else {
-                                        $result[] = $value;
-                                    }
+                    
+                    function extractTaxonomyTerms($data, $taxonomyMap)
+                    {
+                        $matched = [];
+                    
+                        $flatten = function ($data) use (&$flatten) {
+                            $result = [];
+                            foreach ($data as $value) {
+                                if (is_array($value)) {
+                                    $result = array_merge($result, $flatten($value));
+                                } else {
+                                    $result[] = $value;
                                 }
-                        
-                                return $result;
-                            };
-                        
-                            $flatValues = $flatten($data);
-                        
-                            foreach ($flatValues as $value) {
-                                if (is_string($value)) {
-                                    $terms = preg_split('/\s*,\s*/', $value); // split comma-separated values
-                                    foreach ($terms as $term) {
-                                        $key = mb_strtolower(trim($term));
-                                        if (isset($taxonomyMap[$key])) {
-                                            $matched[] = $taxonomyMap[$key];
-                                        }
+                            }
+                            return $result;
+                        };
+                    
+                        $flatValues = $flatten($data);
+                    
+                        foreach ($flatValues as $value) {
+                            if (is_string($value)) {
+                                $terms = preg_split('/\s*,\s*/', $value);
+                                foreach ($terms as $term) {
+                                    $key = mb_strtolower(trim($term));
+                                    if (isset($taxonomyMap[$key])) {
+                                        $matched[] = $taxonomyMap[$key];
                                     }
                                 }
                             }
-                        
-                            return array_unique($matched);
                         }
-                        
+                    
+                        return array_unique($matched);
+                    }
+                    
                     function applyMappingRecursive($data, $mapdata)
                     {
                         foreach ($data as $key => $value) {
@@ -436,72 +435,77 @@ class ImportedDataResource extends Resource
                     
                         return $data;
                     }
-                        
-                        
-                        while (($row = fgetcsv($handle)) !== false) {
-                            try {
-                                if (count($row) !== count($headers)) {
-                                    $errors[] = "Row " . ($importCount + 2) . ": Column count mismatch";
-                                    continue;
-                                }
-                        
-                                $csvData = array_combine($headers, $row);
-                        
-                                $importData = [];
-                                foreach ($mappings as $mapping) {
-                                    if (!empty($mapping['csv_column']) && isset($csvData[$mapping['csv_column']])) {
-                                        $path = explode('.', $mapping['path']);
-                                        $current = &$importData;
-                        
-                                        for ($i = 0; $i < count($path) - 1; $i++) {
-                                            if (!isset($current[$path[$i]])) {
-                                                $current[$path[$i]] = [];
-                                            }
-                                            $current = &$current[$path[$i]];
+                    
+                    while (($row = fgetcsv($handle)) !== false) {
+                        try {
+                            if (count($row) !== count($headers)) {
+                                $errors[] = "Row " . ($importCount + 2) . ": Column count mismatch";
+                                continue;
+                            }
+                    
+                            $csvData = array_combine($headers, $row);
+                    
+                            $importData = [];
+                            foreach ($mappings as $mapping) {
+                                if (!empty($mapping['csv_column']) && isset($csvData[$mapping['csv_column']])) {
+                                    $path = explode('.', $mapping['path']);
+                                    $current = &$importData;
+                    
+                                    for ($i = 0; $i < count($path) - 1; $i++) {
+                                        if (!isset($current[$path[$i]])) {
+                                            $current[$path[$i]] = [];
                                         }
-                        
-                                        $finalKey = end($path);
-                                        $value = $csvData[$mapping['csv_column']];
-                        
-                                        switch ($mapping['type']) {
-                                            case 'integer':
-                                                $value = (int) $value;
-                                                break;
-                                            case 'double':
-                                                $value = (float) $value;
-                                                break;
-                                            case 'boolean':
-                                                $value = in_array(strtolower($value), ['true', '1', 'yes', 'on']);
-                                                break;
-                                            case 'array':
-                                                $value = json_decode($value, true) ?? explode(',', $value);
-                                                break;
-                                        }
-                        
-                                        $current[$finalKey] = $value;
+                                        $current = &$current[$path[$i]];
                                     }
+                    
+                                    $finalKey = end($path);
+                                    $value = $csvData[$mapping['csv_column']];
+                    
+                                    switch ($mapping['type']) {
+                                        case 'integer':
+                                            $value = (int) $value;
+                                            break;
+                                        case 'double':
+                                            $value = (float) $value;
+                                            break;
+                                        case 'boolean':
+                                            $value = in_array(strtolower($value), ['true', '1', 'yes', 'on']);
+                                            break;
+                                        case 'array':
+                                            $value = json_decode($value, true) ?? explode(',', $value);
+                                            break;
+                                    }
+                    
+                                    $current[$finalKey] = $value;
                                 }
-                        
-                                $taxonomyTerms = extractTaxonomyTerms($importData, $taxonomyMap);
-                                $importData = applyMappingRecursive($importData, $mapdata);
+                            }
+                    
+                            $taxonomyTerms = extractTaxonomyTerms($csvData, $taxonomyMap);
+                    
+                            $importData = applyMappingRecursive($importData, $mapdata);
+                    
+                            Log::info('📥 Imported data', ['importData' => $importData]);
+                            Log::info('📥 Taxonomy terms', ['taxonomyTerms' => $taxonomyTerms]);
+                            Log::info('📥 CSV raw data', ['csvData' => $csvData]);
+                            Log::info('📥Taxonomy map', ['mappedData' => $taxonomyMap]);
 
-                                dd($taxonomyTerms);
-                                                       
-                                ImportedData::create([
-                                    'data' => json_encode($importData),
-                                    'content' => $data['content'] ?? null,
-                                    'title' => $csvData['title'] ?? null,
-                                    'route_url' => $csvData['route_url'] ?? null,
-                                    'status' => isset($csvData['status'])
-                                        ? in_array(strtolower($csvData['status']), ['true', '1', 'yes', 'on', 'active'])
-                                        : true,
-                                    'sites' => $csvData['sites'] ?? null,
-                                    'locale' => $data['locale'] ?? 'en',
-                                    'taxonomy_terms' => implode(', ', $taxonomyTerms) ?? null,
-                                    'published_at' => isset($csvData['published_at'])
-                                        ? \Carbon\Carbon::parse($csvData['published_at'])
-                                        : now(),
-                                ]);
+                            // dd($taxonomyMap);
+                    
+                            ImportedData::create([
+                                'data' => json_encode($importData),
+                                'content' => $data['content'] ?? null,
+                                'title' => $csvData['title'] ?? null,
+                                'route_url' => $csvData['route_url'] ?? null,
+                                'status' => isset($csvData['status'])
+                                    ? in_array(strtolower($csvData['status']), ['true', '1', 'yes', 'on', 'active'])
+                                    : true,
+                                'sites' => $csvData['sites'] ?? null,
+                                'locale' => $data['locale'] ?? 'en',
+                                'taxonomy_terms' => implode(', ', $taxonomyTerms),
+                                'published_at' => isset($csvData['published_at'])
+                                    ? \Carbon\Carbon::parse($csvData['published_at'])
+                                    : now(),
+                            ]);
                         
                                 $importCount++;
                             } catch (\Exception $e) {

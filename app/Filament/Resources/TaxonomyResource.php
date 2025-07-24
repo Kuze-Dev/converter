@@ -38,7 +38,8 @@ class TaxonomyResource extends Resource
     {
         return $table
             ->columns([
-                TextColumn::make('original_data'),
+                TextColumn::make('original_data')
+                ->searchable(),
                 TextColumn::make('converted_value')
             ])
             ->filters([

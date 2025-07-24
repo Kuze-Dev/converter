@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('content')->nullable();
             $table->json('data');
-            $table->string('taxonomy_terms')->nullable();
+            $table->text('taxonomy_terms')->nullable();
             $table->string('title')->nullable();
             $table->string('route_url')->nullable();
             $table->boolean('status')->nullable();
