@@ -29,7 +29,8 @@ class CsvImportService
         ImportedDataRepository $repository
     ) {
         $this->fileResolver = $fileResolver;
-        $this->$this->csvProcessor = $csvProcessor;
+        // $this->$this->csvProcessor = $csvProcessor;
+        $this->csvProcessor = $csvProcessor;
         $this->dataMapper = $dataMapper;
         $this->taxonomyExtractor = $taxonomyExtractor;
         $this->repository = $repository;
