@@ -5,14 +5,17 @@ namespace App\Services\Import;
 use App\Dto\CsvData;
 use App\Dto\ImportResult;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use App\Exceptions\ImportException;
-use App\Services\Import\DataMapper;
 use Illuminate\Support\Facades\Log;
+use Filament\Notifications\Notification;
+use App\Services\Import\DataMapper;
 use App\Services\Import\CsvProcessor;
 use App\Services\Import\FileResolver;
-use Filament\Notifications\Notification;
+use App\Models\ImportedImageUrl;
 use App\Repositories\ImportedDataRepository;
-use Illuminate\Support\Collection;
+use App\Services\Import\TaxonomyExtractor;
+
 class CsvImportService
 {
     protected FileResolver $fileResolver;
@@ -26,7 +29,7 @@ class CsvImportService
         CsvProcessor $csvProcessor,
         DataMapper $dataMapper,
         TaxonomyExtractor $taxonomyExtractor,
-        ImportedDataRepository $repository
+        ImportedDataRepository $repository,
     ) {
         $this->fileResolver = $fileResolver;
         $this->csvProcessor = $csvProcessor;
@@ -38,28 +41,26 @@ class CsvImportService
     public function import(array $data): ImportResult
     {
         try {
-            // Resolve file path
             $filePath = $this->fileResolver->resolve($data['uploaded_file']);
-            
-            // Validate mappings
+
             $mappings = collect($data['field_definitions'] ?? []);
             if ($mappings->isEmpty()) {
                 throw new ImportException('No field mappings defined. Please map CSV columns to JSON fields.');
             }
 
             $csvData = $this->csvProcessor->process($filePath);
-            
+
             $result = $this->importRows($csvData, $mappings, $data);
-            
+
             $this->sendNotification($result);
-            
+
             return $result;
-            
+
         } catch (\Throwable $e) {
             Log::error('Import failed: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString()
             ]);
-            
+
             $this->sendErrorNotification($e->getMessage());
             throw $e;
         }
@@ -68,12 +69,38 @@ class CsvImportService
     protected function importRows(CsvData $csvData, Collection $mappings, array $importConfig): ImportResult
     {
         $result = new ImportResult();
-        
+
         foreach ($csvData->getRows() as $rowIndex => $row) {
             try {
                 $importData = $this->dataMapper->mapRow($row, $mappings, $csvData->getHeaders());
                 $taxonomyTerms = $this->taxonomyExtractor->extract($row);
-                
+
+                $baseUrl = $importConfig['base_url'] ?? 'https://islandproperty.com';
+
+                // ✅ Clean and convert image URLs
+                if (isset($importData['media']['images']) && is_array($importData['media']['images'])) {
+                    $cleanedImages = [];
+
+                    foreach ($importData['media']['images'] as $path) {
+                        $clean = trim($path);
+
+                        if (!empty($clean) && strtolower($clean) !== 'null') {
+                            $fullUrl = rtrim($baseUrl, '/') . '/' . ltrim($clean, '/');
+
+                            // Save to cleaned list
+                            $cleanedImages[] = $fullUrl;
+
+                            // Store in image URL table
+                            ImportedImageUrl::create([
+                                'image_url' => $fullUrl,
+                            ]);
+                        }
+                    }
+
+                    // ✅ Inject updated image URLs into media.images
+                    $importData['media']['images'] = $cleanedImages;
+                }
+
                 $record = $this->repository->create([
                     'data' => json_encode($importData),
                     'content' => $importConfig['content'] ?? null,
@@ -85,14 +112,14 @@ class CsvImportService
                     'taxonomy_terms' => implode(', ', $taxonomyTerms),
                     'published_at' => $this->parseDate($row['published_at'] ?? null),
                 ]);
-                
+
                 $result->addSuccess($record);
-                
+
             } catch (\Exception $e) {
                 $result->addError($rowIndex + 2, $e->getMessage());
             }
         }
-        
+
         return $result;
     }
 

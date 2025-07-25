@@ -9,6 +9,7 @@ use Illuminate\Support\ServiceProvider;
 use App\Services\Import\CsvImportService;
 use App\Services\Import\TaxonomyExtractor;
 use App\Repositories\ImportedDataRepository;
+use App\Services\Import\ImageUrlExtractorService;
 
 class ImportServiceProvider extends ServiceProvider
 {
@@ -23,7 +24,9 @@ class ImportServiceProvider extends ServiceProvider
                 $app->make(CsvProcessor::class),
                 $app->make(DataMapper::class),
                 $app->make(TaxonomyExtractor::class),
-                $app->make(ImportedDataRepository::class)
+                $app->make(ImportedDataRepository::class),
+                $app->make(ImageUrlExtractorService::class),
+
             );
         });
     }

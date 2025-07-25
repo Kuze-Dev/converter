@@ -104,7 +104,7 @@ class ImportedDataResource extends Resource
 
                             try {
                                 $filePath = null;
-                                
+
                                 if ($state instanceof TemporaryUploadedFile) {
                                     $filePath = $state->getRealPath();
                                 } elseif (is_string($state)) {
@@ -114,9 +114,9 @@ class ImportedDataResource extends Resource
                                         storage_path('app/public/' . $state),
                                         storage_path('app/' . $state),
                                         Storage::disk('public')->path($state),
-                                        $state 
+                                        $state
                                     ];
-                                    
+
                                     foreach ($possiblePaths as $path) {
                                         if (file_exists($path)) {
                                             $filePath = $path;
@@ -132,7 +132,7 @@ class ImportedDataResource extends Resource
                                         $filePath = storage_path('app/livewire-tmp/' . $firstFile);
                                     }
                                 }
-                                
+
                                 if (!$filePath || !file_exists($filePath)) {
                                     Log::warning('CSV file not found. State type: ' . gettype($state) . ', Value: ' . json_encode($state));
                                     return;
@@ -142,12 +142,12 @@ class ImportedDataResource extends Resource
                                 if ($handle) {
                                     $headers = fgetcsv($handle);
                                     fclose($handle);
-                                    
+
                                     if ($headers) {
                                         $cleanHeaders = array_map(function($header) {
                                             return trim(str_replace(["\xEF\xBB\xBF", "\uFEFF"], '', $header));
                                         }, $headers);
-                                        
+
                                         $set('csv_headers', $cleanHeaders);
                                         Log::info('CSV headers extracted: ', $cleanHeaders);
                                     }
@@ -167,7 +167,13 @@ class ImportedDataResource extends Resource
                         }),
                     Forms\Components\TextInput::make('content')
                         ->required(),
-                        
+                      Forms\Components\TextInput::make('base_url')
+                        ->label('Base URL for Images')
+                        ->default('https://islandproperty.com')
+                        ->required()
+                        ->helperText('Base URL that will be prepended to relative image paths'),
+
+
                     Forms\Components\Select::make('locale')
                         ->options([
                             'en' => 'English',
@@ -186,36 +192,36 @@ class ImportedDataResource extends Resource
                                 $set('available_fields', []);
                                 return;
                             }
-            
+
                             try {
                                 $parsed = json_decode($state, true);
-            
+
                                 if (json_last_error() !== JSON_ERROR_NONE) {
                                     Log::error('JSON parsing error: ' . json_last_error_msg());
                                     return;
                                 }
-            
+
                                 if (!is_array($parsed)) {
                                     return;
                                 }
 
                                 $csvHeaders = $get('csv_headers') ?? [];
-            
+
                                 $extractFields = function ($data, $parentPath = '') use (&$extractFields, $csvHeaders) {
                                     $fields = [];
-                                    
+
                                     foreach ($data as $key => $value) {
                                         $currentPath = $parentPath ? $parentPath . '.' . $key : $key;
-                                        
+
                                         $fields[] = [
                                             'parent' => $parentPath ?: 'root',
                                             'json_field' => $key,
                                             'path' => $currentPath,
                                             'type' => is_array($value) ? 'array' : gettype($value),
-                                            'csv_column' => '', 
+                                            'csv_column' => '',
                                             'available_csv_headers' => $csvHeaders,
                                         ];
-                                        
+
                                         if (is_array($value) && !empty($value)) {
                                             if (array_keys($value) !== range(0, count($value) - 1)) {
                                                 $nestedFields = $extractFields($value, $currentPath);
@@ -223,24 +229,24 @@ class ImportedDataResource extends Resource
                                             }
                                         }
                                     }
-                                    
+
                                     return $fields;
                                 };
-            
+
                                 $result = $extractFields($parsed);
-            
+
                                 $set('field_definitions', $result);
-                                
+
                                 $fieldNames = array_column($result, 'json_field');
                                 $set('available_fields', $fieldNames);
-                                
+
                             } catch (\Throwable $e) {
                                 Log::error('JSON parsing error: ' . $e->getMessage());
                                 $set('field_definitions', []);
                                 $set('available_fields', []);
                             }
                         }),
-            
+
                         Forms\Components\Repeater::make('field_definitions')
                         ->label('Field Mappings')
                         ->schema([
@@ -285,7 +291,7 @@ class ImportedDataResource extends Resource
                         ->itemLabel(function (array $state): ?string {
                             return $state['json_field'] ?? null;
                         })
-                        ->dehydrated(true) 
+                        ->dehydrated(true)
                         ->mutateDehydratedStateUsing(function ($state) {
                             return collect($state)->map(function ($item) {
                                 return array_merge([
@@ -297,7 +303,7 @@ class ImportedDataResource extends Resource
                                 ], $item);
                             })->toArray();
                         }),
-            
+
                     Forms\Components\TagsInput::make('available_fields')
                         ->label('Available JSON Fields')
                         ->disabled()
