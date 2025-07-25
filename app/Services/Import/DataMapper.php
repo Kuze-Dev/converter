@@ -34,12 +34,18 @@ class DataMapper
 
     protected function transformValue($value, string $type)
     {
+        $trimmed = trim((string) $value);
+        
+        if ($trimmed === '' || strtolower($trimmed) === 'null') {
+            return null;
+        }
+
         return match($type) {
             'integer' => (int) $value,
             'double' => (float) $value,
             'boolean' => in_array(strtolower($value), ['true', '1', 'yes', 'on']),
             'array' => json_decode($value, true) ?? explode(',', $value),
-            default => $value
+            default => $trimmed
         };
     }
 
