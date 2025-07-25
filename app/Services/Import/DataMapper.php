@@ -19,18 +19,33 @@ class DataMapper
     public function mapRow(array $csvRow, Collection $mappings, array $headers): array
     {
         $importData = [];
-        
+    
+        foreach ($mappings as $mapping) {
+            $default = match ($mapping['type']) {
+                'integer' => null,
+                'double' => null,
+                'boolean' => null,
+                'array' => [],
+                'object' => new \stdClass(),
+                'NULL' => null,
+                default => null,
+            };
+    
+            $this->setNestedValue($importData, $mapping['path'], $default);
+        }
+    
         foreach ($mappings as $mapping) {
             if (empty($mapping['csv_column']) || !isset($csvRow[$mapping['csv_column']])) {
                 continue;
             }
-            
+    
             $value = $this->transformValue($csvRow[$mapping['csv_column']], $mapping['type']);
             $this->setNestedValue($importData, $mapping['path'], $value);
         }
-        
+    
         return $this->applyMappingRecursive($importData);
     }
+    
 
     protected function transformValue($value, string $type)
     {
