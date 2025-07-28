@@ -150,7 +150,7 @@ class CsvImportService
     protected function parseStatus(?string $status): bool
     {
         if ($status === null) return true;
-        return in_array(strtolower($status), ['true', '1', 'yes', 'on', 'active' , 'Active']);
+        return in_array(strtolower($status), ['true', '1', 'yes', 'on', 'active']);
     }
 
     protected function parseDate(?string $date): Carbon
