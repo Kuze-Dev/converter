@@ -168,6 +168,25 @@ class ImportedDataResource extends Resource
                         ->visible(function ($get) {
                             return !empty($get('csv_headers'));
                         }),
+
+                    Forms\Components\Select::make('title')
+                        ->label('Select Title Column')
+                        ->options(function ($get) {
+                            $csvHeaders = $get('csv_headers') ?? [];
+                            if (empty($csvHeaders)) {
+                                return [];
+                            }
+                            return array_combine($csvHeaders, $csvHeaders);
+                        })
+                        ->searchable()
+                        ->placeholder('Choose a CSV column for title')
+                        ->helperText('Select which CSV column contains the title data')
+                        ->visible(function ($get) {
+                            return !empty($get('csv_headers'));
+                        })
+                        ->reactive()
+                        ->dehydrated(),
+                        
                     Forms\Components\TextInput::make('content')
                         ->required(),
                         
