@@ -28,7 +28,7 @@ class GeminiInstructionsResource extends Resource
                 Forms\Components\TextInput::make('title')
                     ->required()
                     ->maxLength(255),
-                Forms\Components\Textarea::make('content')
+                Forms\Components\RichEditor::make('content')
                     ->required()
                     ->columnSpanFull(),
             ]);
