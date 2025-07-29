@@ -17,9 +17,10 @@ class GeminiInstructionsResource extends Resource
 {
     protected static ?string $navigationGroup = 'Ai Chat';
 
+    protected static ?string $navigationLabel = 'Butcheennn AI Instructions';
     protected static ?string $model = GeminiInstructions::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-light-bulb';
 
     public static function form(Form $form): Form
     {

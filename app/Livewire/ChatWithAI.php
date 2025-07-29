@@ -4,25 +4,84 @@ namespace App\Livewire;
 
 use App\Models\User;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 use App\Models\GeminiInstructions;
 use Illuminate\Support\Facades\Http;
 use Filament\Notifications\Notification;
 
 class ChatWithAI extends Component
 {
+    use WithFileUploads;
+
     public $messages = [];
     public $messageInput = '';
+    public $uploadedImage; // For the actual file upload
+    public $selectedImage; // For the preview data URL
+    public $imageTooLarge = false;
 
     public function render()
     {
         return view('livewire.chat-with-a-i');
     }
 
+    public function updatedUploadedImage()
+    {
+        $this->imageTooLarge = false;
+        
+        // Validate file size (20MB limit for Gemini API)
+        if ($this->uploadedImage && $this->uploadedImage->getSize() > 20 * 1024 * 1024) {
+            $this->imageTooLarge = true;
+            $this->uploadedImage = null;
+            $this->selectedImage = null;
+            return;
+        }
+
+        if ($this->uploadedImage) {
+            // Convert to base64 for preview
+            $imageData = base64_encode(file_get_contents($this->uploadedImage->getRealPath()));
+            $mimeType = $this->uploadedImage->getMimeType();
+            
+            $this->selectedImage = "data:{$mimeType};base64,{$imageData}";
+        }
+    }
+
+    public function removeSelectedImage()
+    {
+        $this->uploadedImage = null;
+        $this->selectedImage = null;
+        $this->imageTooLarge = false;
+    }
+
     public function sendMessage()
     {
         $userMessage = trim($this->messageInput);
-        $this->messages[] = ['from' => 'user', 'text' => $userMessage];
+        $hasImage = !empty($this->selectedImage);
+        
+        // Don't send empty messages without images
+        if (empty($userMessage) && !$hasImage) {
+            return;
+        }
+
+        // Prepare message data
+        $messageData = [
+            'from' => 'user',
+            'text' => $userMessage ?: '[Image]'
+        ];
+
+        // Add image data if present
+        if ($hasImage) {
+            // Extract base64 data and mime type from data URL
+            preg_match('/data:([^;]+);base64,(.+)/', $this->selectedImage, $matches);
+            if (count($matches) === 3) {
+                $messageData['image'] = $matches[2]; // base64 data
+                $messageData['mime_type'] = $matches[1]; // mime type
+            }
+        }
+
+        $this->messages[] = $messageData;
         $this->messageInput = '';
+        $this->uploadedImage = null;
+        $this->selectedImage = null;
 
         $this->askGemini($this->messages);
     }
@@ -31,15 +90,14 @@ class ChatWithAI extends Component
     {
         $apiKey = env('GEMINI_API_KEY');
 
-
-        $instructions = \App\Models\GeminiInstructions::orderBy('created_at', 'asc')->get(['title', 'content', 'created_at']);
+        // Get dynamic instructions from database
+        $instructions = GeminiInstructions::orderBy('created_at', 'asc')->get(['title', 'content', 'created_at']);
 
         $instructionText = $instructions->isNotEmpty()
             ? $instructions->map(function ($i) {
                 return "### {$i->title} (Created at: {$i->created_at->format('Y-m-d H:i:s')})\n{$i->content}";
             })->implode("\n\n---\n\n")
             : "Sorry, I could not understand that.";
-
 
         $systemPrompt = [
             [
@@ -52,36 +110,77 @@ class ChatWithAI extends Component
 
         $chatHistory = array_merge(
             $systemPrompt,
-            collect($messages)->map(fn($m) => [
-                'role' => $m['from'] === 'user' ? 'user' : 'model',
-                'parts' => [['text' => $m['text']]],
-            ])->toArray()
+            collect($messages)->map(function($m) {
+                $parts = [];
+                
+                // Add text if present
+                if (!empty($m['text'])) {
+                    $parts[] = ['text' => $m['text']];
+                }
+                
+                // Add image if present
+                if (isset($m['image']) && isset($m['mime_type'])) {
+                    $parts[] = [
+                        'inline_data' => [
+                            'mime_type' => $m['mime_type'],
+                            'data' => $m['image']
+                        ]
+                    ];
+                }
+                
+                // Fallback to text if no parts
+                if (empty($parts)) {
+                    $parts[] = ['text' => '[Message]'];
+                }
+
+                return [
+                    'role' => $m['from'] === 'user' ? 'user' : 'model',
+                    'parts' => $parts
+                ];
+            })->toArray()
         );
 
-        $response = Http::withHeaders([
-            'Content-Type' => 'application/json',
-        ])->post("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={$apiKey}", [
-            'contents' => $chatHistory,
-        ]);
+        try {
+            $response = Http::withHeaders([
+                'Content-Type' => 'application/json',
+            ])->timeout(30)->post("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={$apiKey}", [
+                'contents' => $chatHistory,
+            ]);
 
-        $data = $response->json();
+            $data = $response->json();
 
-        $aiText = $data['candidates'][0]['content']['parts'][0]['text'] ?? 'Sorry, I could not understand that.';
+            if ($response->failed()) {
+                $this->messages[] = [
+                    'from' => 'ai',
+                    'text' => 'Sorry, I encountered an error processing your request. Please try again.'
+                ];
+                return;
+            }
 
-        if (str_starts_with($aiText, 'CREATE_USER|')) {
-            $this->handleCreateUser($aiText);
-        } elseif (str_starts_with($aiText, 'LIST_USERS')) {
-            $this->handleListUsers();
-        } elseif (str_starts_with($aiText, 'GET_USER|')) {
-            $this->handleGetUser($aiText);
-        } elseif (str_starts_with($aiText, 'UPDATE_USER|')) {
-            $this->handleUpdateUser($aiText);
-        } elseif (str_starts_with($aiText, 'DELETE_USER|')) {
-            $this->handleDeleteUser($aiText);
-        } else {
+            $aiText = $data['candidates'][0]['content']['parts'][0]['text'] ?? 'Sorry, I could not understand that.';
+
+            // Handle different CRUD operations
+            if (str_starts_with($aiText, 'CREATE_USER|')) {
+                $this->handleCreateUser($aiText);
+            } elseif (str_starts_with($aiText, 'LIST_USERS')) {
+                $this->handleListUsers();
+            } elseif (str_starts_with($aiText, 'GET_USER|')) {
+                $this->handleGetUser($aiText);
+            } elseif (str_starts_with($aiText, 'UPDATE_USER|')) {
+                $this->handleUpdateUser($aiText);
+            } elseif (str_starts_with($aiText, 'DELETE_USER|')) {
+                $this->handleDeleteUser($aiText);
+            } else {
+                // Regular AI response
+                $this->messages[] = [
+                    'from' => 'ai',
+                    'text' => $aiText,
+                ];
+            }
+        } catch (\Exception $e) {
             $this->messages[] = [
                 'from' => 'ai',
-                'text' => $aiText,
+                'text' => 'Sorry, I encountered a connection error. Please try again later.'
             ];
         }
     }
@@ -89,28 +188,28 @@ class ChatWithAI extends Component
     private function handleCreateUser($aiText)
     {
         $parts = explode('|', $aiText);
-        if (count($parts) === 3) {
-            $email = $parts[1];
-            $password = $parts[2];
+        if (count($parts) === 4) {
+            $name = $parts[1];
+            $email = $parts[2];
+            $password = $parts[3];
             
             try {
-                // Check if user already exists
                 if (User::where('email', $email)->exists()) {
                     $this->messages[] = ['from' => 'ai', 'text' => "❌ User with email `{$email}` already exists."];
                     return;
                 }
 
                 $user = User::create([
-                    'name' => $email,
+                    'name' => $name,
                     'email' => $email,
                     'password' => bcrypt($password),
                 ]);
 
                 $this->messages[] = ['from' => 'ai', 'text' => "✅ User `{$user->email}` created successfully with ID: {$user->id}"];
                 Notification::make()
-                ->title('User Created')
-                ->success()
-                ->send();
+                    ->title('User Created')
+                    ->success()
+                    ->send();
             } catch (\Exception $e) {
                 $this->messages[] = ['from' => 'ai', 'text' => "❌ Failed to create user. Error: " . $e->getMessage()];
             }
@@ -151,7 +250,6 @@ class ChatWithAI extends Component
             $identifier = $parts[1];
             
             try {
-                // Try to find user by ID first, then by email
                 $user = is_numeric($identifier) 
                     ? User::find($identifier)
                     : User::where('email', $identifier)->first();
@@ -184,7 +282,6 @@ class ChatWithAI extends Component
             $identifier = $parts[1];
             
             try {
-                // Try to find user by ID first, then by email
                 $user = is_numeric($identifier) 
                     ? User::find($identifier)
                     : User::where('email', $identifier)->first();
@@ -235,6 +332,11 @@ class ChatWithAI extends Component
 
                 $fieldsUpdated = implode(', ', $updatedFields);
                 $this->messages[] = ['from' => 'ai', 'text' => "✅ User `{$user->email}` updated successfully. Fields updated: {$fieldsUpdated}"];
+                
+                Notification::make()
+                    ->title('User Updated')
+                    ->success()
+                    ->send();
             } catch (\Exception $e) {
                 $this->messages[] = ['from' => 'ai', 'text' => "❌ Failed to update user. Error: " . $e->getMessage()];
             }
@@ -264,6 +366,11 @@ class ChatWithAI extends Component
                 $user->delete();
 
                 $this->messages[] = ['from' => 'ai', 'text' => "✅ User `{$userEmail}` deleted successfully."];
+                
+                Notification::make()
+                    ->title('User Deleted')
+                    ->success()
+                    ->send();
             } catch (\Exception $e) {
                 $this->messages[] = ['from' => 'ai', 'text' => "❌ Failed to delete user. Error: " . $e->getMessage()];
             }
