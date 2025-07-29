@@ -195,7 +195,7 @@ class ChatWithAI extends Component
             
             try {
                 if (User::where('email', $email)->exists()) {
-                    $this->messages[] = ['from' => 'ai', 'text' => "❌ User with email `{$email}` already exists."];
+                    $this->messages[] = ['from' => 'ai', 'text' => " User with email `{$email}` already exists."];
                     return;
                 }
 
@@ -205,16 +205,16 @@ class ChatWithAI extends Component
                     'password' => bcrypt($password),
                 ]);
 
-                $this->messages[] = ['from' => 'ai', 'text' => "✅ User `{$user->email}` created successfully with ID: {$user->id}"];
+                $this->messages[] = ['from' => 'ai', 'text' => " User `{$user->email}` created successfully with ID: {$user->id}"];
                 Notification::make()
                     ->title('User Created')
                     ->success()
                     ->send();
             } catch (\Exception $e) {
-                $this->messages[] = ['from' => 'ai', 'text' => "❌ Failed to create user. Error: " . $e->getMessage()];
+                $this->messages[] = ['from' => 'ai', 'text' => " Failed to create user. Error: " . $e->getMessage()];
             }
         } else {
-            $this->messages[] = ['from' => 'ai', 'text' => "❌ Invalid user creation format."];
+            $this->messages[] = ['from' => 'ai', 'text' => " Invalid user creation format."];
         }
     }
 
@@ -224,7 +224,7 @@ class ChatWithAI extends Component
             $users = User::select('id', 'name', 'email', 'created_at')->get();
             
             if ($users->isEmpty()) {
-                $this->messages[] = ['from' => 'ai', 'text' => "📋 No users found in the system."];
+                $this->messages[] = ['from' => 'ai', 'text' => " No users found in the system."];
                 return;
             }
 
@@ -239,7 +239,7 @@ class ChatWithAI extends Component
 
             $this->messages[] = ['from' => 'ai', 'text' => $usersList];
         } catch (\Exception $e) {
-            $this->messages[] = ['from' => 'ai', 'text' => "❌ Failed to fetch users. Error: " . $e->getMessage()];
+            $this->messages[] = ['from' => 'ai', 'text' => " Failed to fetch users. Error: " . $e->getMessage()];
         }
     }
 
@@ -255,7 +255,7 @@ class ChatWithAI extends Component
                     : User::where('email', $identifier)->first();
 
                 if (!$user) {
-                    $this->messages[] = ['from' => 'ai', 'text' => "❌ User not found with identifier: `{$identifier}`"];
+                    $this->messages[] = ['from' => 'ai', 'text' => " User not found with identifier: `{$identifier}`"];
                     return;
                 }
 
@@ -268,10 +268,10 @@ class ChatWithAI extends Component
 
                 $this->messages[] = ['from' => 'ai', 'text' => $userInfo];
             } catch (\Exception $e) {
-                $this->messages[] = ['from' => 'ai', 'text' => "❌ Failed to fetch user. Error: " . $e->getMessage()];
+                $this->messages[] = ['from' => 'ai', 'text' => " Failed to fetch user. Error: " . $e->getMessage()];
             }
         } else {
-            $this->messages[] = ['from' => 'ai', 'text' => "❌ Invalid get user format."];
+            $this->messages[] = ['from' => 'ai', 'text' => " Invalid get user format."];
         }
     }
 
@@ -287,7 +287,7 @@ class ChatWithAI extends Component
                     : User::where('email', $identifier)->first();
 
                 if (!$user) {
-                    $this->messages[] = ['from' => 'ai', 'text' => "❌ User not found with identifier: `{$identifier}`"];
+                    $this->messages[] = ['from' => 'ai', 'text' => " User not found with identifier: `{$identifier}`"];
                     return;
                 }
 
@@ -309,7 +309,7 @@ class ChatWithAI extends Component
                             case 'email':
                                 // Check if new email already exists
                                 if (User::where('email', $value)->where('id', '!=', $user->id)->exists()) {
-                                    $this->messages[] = ['from' => 'ai', 'text' => "❌ Email `{$value}` is already taken by another user."];
+                                    $this->messages[] = ['from' => 'ai', 'text' => " Email `{$value}` is already taken by another user."];
                                     return;
                                 }
                                 $updateData['email'] = $value;
@@ -324,24 +324,24 @@ class ChatWithAI extends Component
                 }
 
                 if (empty($updateData)) {
-                    $this->messages[] = ['from' => 'ai', 'text' => "❌ No valid fields to update."];
+                    $this->messages[] = ['from' => 'ai', 'text' => " No valid fields to update."];
                     return;
                 }
 
                 $user->update($updateData);
 
                 $fieldsUpdated = implode(', ', $updatedFields);
-                $this->messages[] = ['from' => 'ai', 'text' => "✅ User `{$user->email}` updated successfully. Fields updated: {$fieldsUpdated}"];
+                $this->messages[] = ['from' => 'ai', 'text' => "User `{$user->email}` updated successfully. Fields updated: {$fieldsUpdated}"];
                 
                 Notification::make()
                     ->title('User Updated')
                     ->success()
                     ->send();
             } catch (\Exception $e) {
-                $this->messages[] = ['from' => 'ai', 'text' => "❌ Failed to update user. Error: " . $e->getMessage()];
+                $this->messages[] = ['from' => 'ai', 'text' => " Failed to update user. Error: " . $e->getMessage()];
             }
         } else {
-            $this->messages[] = ['from' => 'ai', 'text' => "❌ Invalid update user format."];
+            $this->messages[] = ['from' => 'ai', 'text' => " Invalid update user format."];
         }
     }
 
@@ -358,24 +358,24 @@ class ChatWithAI extends Component
                     : User::where('email', $identifier)->first();
 
                 if (!$user) {
-                    $this->messages[] = ['from' => 'ai', 'text' => "❌ User not found with identifier: `{$identifier}`"];
+                    $this->messages[] = ['from' => 'ai', 'text' => " User not found with identifier: `{$identifier}`"];
                     return;
                 }
 
                 $userEmail = $user->email;
                 $user->delete();
 
-                $this->messages[] = ['from' => 'ai', 'text' => "✅ User `{$userEmail}` deleted successfully."];
+                $this->messages[] = ['from' => 'ai', 'text' => " User `{$userEmail}` deleted successfully."];
                 
                 Notification::make()
                     ->title('User Deleted')
                     ->success()
                     ->send();
             } catch (\Exception $e) {
-                $this->messages[] = ['from' => 'ai', 'text' => "❌ Failed to delete user. Error: " . $e->getMessage()];
+                $this->messages[] = ['from' => 'ai', 'text' => " Failed to delete user. Error: " . $e->getMessage()];
             }
         } else {
-            $this->messages[] = ['from' => 'ai', 'text' => "❌ Invalid delete user format."];
+            $this->messages[] = ['from' => 'ai', 'text' => " Invalid delete user format."];
         }
     }
 }
