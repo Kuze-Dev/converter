@@ -64,7 +64,9 @@ class ImportedDataResource extends Resource
                 Tables\Columns\TextColumn::make('content')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('taxonomy_terms')
-                    ->searchable(),
+                    ->searchable()
+                    ->limit(30)
+                    ->tooltip('Click to view all terms'),
                 Tables\Columns\TextColumn::make('title')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('route_url')

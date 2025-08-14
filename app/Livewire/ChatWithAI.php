@@ -18,6 +18,7 @@ class ChatWithAI extends Component
     public $uploadedImage; // For the actual file upload
     public $selectedImage; // For the preview data URL
     public $imageTooLarge = false;
+    public $isThinking = false; // New property to track thinking state
 
     public function render()
     {
@@ -82,8 +83,23 @@ class ChatWithAI extends Component
         $this->messageInput = '';
         $this->uploadedImage = null;
         $this->selectedImage = null;
+        
+        // Show thinking bubble and force render
+        $this->isThinking = true;
+        
+        // Use dispatch to make the API call asynchronously
+        $this->dispatch('thinking-started');
+        
+        // Call askGemini in the next tick to ensure UI updates first
+        $this->askGeminiAsync($this->messages);
+    }
 
-        $this->askGemini($this->messages);
+    public function askGeminiAsync($messages)
+    {
+        // Small delay to ensure the thinking bubble shows
+        usleep(100000); // 0.1 second delay
+        
+        $this->askGemini($messages);
     }
 
     public function askGemini($messages)
@@ -149,6 +165,9 @@ class ChatWithAI extends Component
 
             $data = $response->json();
 
+            // Hide thinking bubble
+            $this->isThinking = false;
+
             if ($response->failed()) {
                 $this->messages[] = [
                     'from' => 'ai',
@@ -178,6 +197,9 @@ class ChatWithAI extends Component
                 ];
             }
         } catch (\Exception $e) {
+            // Hide thinking bubble on error
+            $this->isThinking = false;
+            
             $this->messages[] = [
                 'from' => 'ai',
                 'text' => 'Sorry, I encountered a connection error. Please try again later.'
