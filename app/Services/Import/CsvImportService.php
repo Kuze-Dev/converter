@@ -36,6 +36,7 @@ class CsvImportService
         $this->repository = $repository;
     }
 
+    public $content = '';
     public function import(array $data): ImportResult
     {
         try {
@@ -99,7 +100,7 @@ class CsvImportService
                     'data' => json_encode($importData),
                     'content' => $importConfig['content'] ?? null,
                     'title' => $titleValue,
-                    'route_url' => $this->generateRouteUrl($titleValue, $row, $headers),
+                    'route_url' => $this->generateRouteUrl($titleValue, $row, $headers, $importConfig),
                     'status' => $this->parseStatus($this->getColumnValue($row, $headers, 'status')) ?? 1,
                     'sites' => $this->getColumnValue($row, $headers, 'sites') ?? null,
                     'locale' => $importConfig['locale'] ?? 'en',
@@ -133,7 +134,7 @@ class CsvImportService
         return null;
     }
 
-    protected function generateRouteUrl(?string $title, array $row, array $headers): ?string
+    protected function generateRouteUrl(?string $title, array $row, array $headers ,array $importConfig): ?string
     {
         $routeUrl = $this->getColumnValue($row, $headers, 'route_url');
         if ($routeUrl) {
@@ -141,7 +142,7 @@ class CsvImportService
         }
 
         if ($title) {
-            return '/' . strtolower(str_replace([' ', '_'], '-', preg_replace('/[^A-Za-z0-9\s_-]/', '', $title)));
+            return $importConfig['content'] . '/' . strtolower(str_replace([' ', '_'], '-', preg_replace('/[^A-Za-z0-9\s_-]/', '', $title)));
         }
 
         return null;
