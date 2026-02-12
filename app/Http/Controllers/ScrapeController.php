@@ -15,7 +15,7 @@ class ScrapeController extends Controller
             'url' => 'required|url',
         ]);
 
-        $apiKey = 'ac5fe0a70bc0e7f9fafb62042463bb1d';
+        $apiKey = env('SCRAPER_API');
 
         try {
             // ScraperAPI endpoint
